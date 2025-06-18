@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Control del Proyecto ClientBot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Slate & Emerald -->
+    <!-- Application Structure Plan: A dashboard layout is used to provide an immediate, high-level overview and facilitate deeper exploration. The core structure includes: 1) A main progress donut chart for at-a-glance status. 2) Category filter buttons for interactive data slicing. 3) A section for adding new tasks. 4) Two distinct columns for 'Completed' and 'Pending' tasks, which is the most logical division of the source report's content. This structure was chosen because it transforms a static list into a dynamic tool, allowing stakeholders to quickly assess overall progress, add new items, and then drill down into specific areas of interest (like 'Technical' or 'Web') without being overwhelmed by information. The user flow is: see overview -> filter by interest -> add new task -> analyze specific tasks -> update/delete tasks. -->
+    <!-- Visualization & Content Choices: 1) Report Info: Overall task completion. -> Goal: Inform. -> Viz: Donut Chart. -> Interaction: Updates on filter click and task status change. -> Justification: Provides the most critical project KPI instantly. -> Library: Chart.js (Canvas). 2) Report Info: Task Lists. -> Goal: Organize/Inform. -> Viz: Styled Cards in Columns. -> Interaction: Lists are filtered by category buttons, individual tasks can be toggled via checkbox, and deleted via button. -> Justification: Cards offer a scannable, visually organized format superior to a simple list, checkboxes provide intuitive state management, and delete buttons enable task management. -> Method: HTML/CSS/Tailwind. 3) Report Info: Task Categories. -> Goal: Compare/Filter/Select. -> Viz: Buttons and Select dropdown. -> Interaction: Click filters tasks and updates chart; select populates new task category. -> Justification: Standard, intuitive UI for user-driven data exploration and task creation. -> Method: HTML/CSS/JS. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 320px;
+            height: 320px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .chart-center-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            pointer-events: none;
+        }
+        .filter-btn.active {
+            background-color: #10b981;
+            color: white;
+            font-weight: 600;
+        }
+        .task-card {
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .task-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        .task-description.completed {
+            text-decoration: line-through;
+            color: #64748b; /* slate-500 */
+        }
+        .task-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px; /* Space between checkbox and delete button */
+        }
+        .task-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .task-checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            margin-right: 0px; /* Adjust spacing next to the checkbox */
+        }
+        .delete-btn {
+            background: none;
+            border: none;
+            color: #ef4444; /* red-500 */
+            cursor: pointer;
+            font-size: 1.25rem; /* text-xl */
+            line-height: 1;
+            padding: 0;
+            transition: color 0.2s;
+        }
+        .delete-btn:hover {
+            color: #dc2626; /* red-600 */
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-900">Estado del Proyecto: ClientBot</h1>
+            <p class="mt-2 text-lg text-slate-600">Panel de control interactivo del progreso hasta el 17 de Junio.</p>
+        </header>
+
+        <main>
+            <!-- Section: Overview and Filters -->
+            <section id="overview" class="mb-10 p-6 bg-white rounded-2xl shadow-lg">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center">
+                    <div class="lg:col-span-1">
+                        <h2 class="text-2xl font-bold text-center mb-4 text-slate-900">Progreso General</h2>
+                        <div id="progress-chart-container" class="chart-container">
+                            <canvas id="progressChart"></canvas>
+                            <div id="chart-text" class="chart-center-text">
+                                <span id="progress-percentage" class="text-4xl font-bold text-slate-800"></span>
+                                <span class="text-sm text-slate-500 block">Completado</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-2">
+                        <h3 class="text-2xl font-bold mb-4 text-slate-900">Filtrar por Categoría</h3>
+                        <p class="text-slate-600 mb-6">
+                            Selecciona una categoría para ver las tareas específicas y el progreso correspondiente en esa área. Esto te permite enfocarte en los avances de infraestructura, desarrollo técnico, estrategia y más. Haz clic en "Todas" para ver el estado completo del proyecto.
+                        </p>
+                        <div id="filters" class="flex flex-wrap gap-2">
+                            <!-- Filter buttons will be inserted here by JS -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section: Add New Task -->
+            <section id="add-task" class="mb-10 p-6 bg-white rounded-2xl shadow-lg">
+                <h2 class="text-2xl font-bold mb-4 text-slate-900">Agregar Nueva Tarea</h2>
+                <p class="text-slate-600 mb-6">
+                    Utiliza este formulario para añadir nuevas tareas al seguimiento del proyecto. Asegúrate de proporcionar una descripción clara y seleccionar la categoría adecuada para mantener la organización. Las tareas añadidas aparecerán automáticamente en la lista de pendientes.
+                </p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <input type="text" id="task-description-input" placeholder="Descripción de la tarea" class="md:col-span-2 p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <select id="task-category-select" class="p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        <!-- Categories will be populated by JS -->
+                    </select>
+                    <button id="add-task-btn" class="md:col-span-3 bg-emerald-600 text-white p-3 rounded-lg font-semibold hover:bg-emerald-700 transition-colors duration-200 shadow-md">
+                        Agregar Tarea
+                    </button>
+                </div>
+            </section>
+
+            <!-- Section: Task Lists -->
+            <section id="tasks">
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    
+                    <!-- Completed Tasks Column -->
+                    <div>
+                        <div class="flex items-center mb-4">
+                            <span class="text-2xl mr-3">✅</span>
+                            <h2 class="text-3xl font-bold text-emerald-600">Completado</h2>
+                        </div>
+                        <p class="text-slate-600 mb-6 min-h-[60px]">
+                           Estas son las tareas que ya han sido finalizadas, sentando las bases del proyecto. Cada elemento completado representa un paso crucial hacia el lanzamiento del MVP.
+                        </p>
+                        <div id="completed-tasks" class="space-y-4">
+                            <!-- Completed task cards will be inserted here -->
+                        </div>
+                    </div>
+
+                    <!-- Pending Tasks Column -->
+                    <div>
+                        <div class="flex items-center mb-4">
+                            <span class="text-2xl mr-3">🚧</span>
+                            <h2 class="text-3xl font-bold text-amber-600">Pendiente</h2>
+                        </div>
+                         <p class="text-slate-600 mb-6 min-h-[60px]">
+                           Estos son los próximos pasos críticos para alcanzar un MVP funcional. El enfoque actual está en la integración técnica, la configuración de clientes y las pruebas de extremo a extremo.
+                        </p>
+                        <div id="pending-tasks" class="space-y-4">
+                            <!-- Pending task cards will be inserted here -->
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            let tasks = [
+                { id: 1, category: 'Infraestructura', description: 'Railway configurado con backend desplegado y funcionando.', status: 'Completado' },
+                { id: 2, category: 'Infraestructura', description: 'Instancia de n8n desplegada con Redis, PostgreSQL y Workers, usando plantilla recomendada.', status: 'Completado' },
+                { id: 3, category: 'Infraestructura', description: 'Workflow en n8n con Agente Secretario, importado y listo para conectar.', status: 'Completado' },
+                { id: 4, category: 'Infraestructura', description: 'Dominio comprado (clientbot.net), pendiente de verificación.', status: 'Completado' },
+                { id: 5, category: 'Web', description: 'Landing page ya publicada usando el creador de Hostinger con IA.', status: 'Completado' },
+                { id: 6, category: 'Web', description: 'Formulario de contacto funcional con diseño atractivo y profesional.', status: 'Completado' },
+                { id: 7, category: 'Integraciones', description: 'Entendimiento del flujo: backend -> n8n, y pruebas iniciales.', status: 'Completado' },
+                { id: 8, category: 'Integraciones', description: 'Se investigaron y analizaron varios BSPs (360dialog, Twilio, etc).', status: 'Completado' },
+                { id: 9, category: 'Integraciones', description: 'Decisión estratégica de usar Cloud API para MVP y 360dialog para escalar.', status: 'Completado' },
+                { id: 10, category: 'Planificación', description: 'Claridad sobre MVP y público objetivo (pequeños negocios de moda).', status: 'Completado' },
+                { id: 11, category: 'Planificación', description: 'Decisión de empezar con WhatsApp como primer canal (vía Cloud API).', status: 'Completado' },
+                { id: 12, category: 'Planificación', description: 'Decisión de usar Instagram y Messenger más adelante.', status: 'Completado' },
+                { id: 13, category: 'Planificación', description: 'Decisión de usar una sola app de Meta para múltiples clientes.', status: 'Completado' },
+                { id: 14, category: 'Planificación', description: 'Plan de ofrecer pruebas gratuitas para clientes iniciales.', status: 'Completado' },
+                { id: 15, category: 'Planificación', description: 'Landing diseñada para aplicar al programa de partners de 360dialog.', status: 'Completado' },
+                { id: 16, category: 'Planificación', description: 'Buen criterio de marca, presentación y comunicación.', status: 'Completado' },
+                { id: 17, category: 'Técnicos', description: 'Completar conexión del webhook de WhatsApp Cloud API a tu backend.', status: 'Pendiente' },
+                { id: 18, category: 'Técnicos', description: 'Redirigir mensajes entrantes a n8n.', status: 'Pendiente' },
+                { id: 19, category: 'Técnicos', description: 'Configurar manejo de intenciones y respuestas en n8n.', status: 'Pendiente' },
+                { id: 20, category: 'Técnicos', description: 'Conectar respuestas de n8n de vuelta a WhatsApp vía Cloud API.', status: 'Pendiente' },
+                { id: 21, category: 'Técnicos', description: 'Implementar sistema de logs, errores o alertas simples.', status: 'Pendiente' },
+                { id: 22, category: 'Clientes', description: 'Definir formato para agregar clientes al sistema.', status: 'Pendiente' },
+                { id: 23, category: 'Clientes', description: 'Validar flujo multiempresa.', status: 'Pendiente' },
+                { id: 24, category: 'Clientes', description: 'Crear interfaz mínima para probar envío de mensajes.', status: 'Pendiente' },
+                { id: 25, category: 'Web', description: 'Finalizar landing tras aprobación del dominio.', status: 'Pendiente' },
+                { id: 26, category: 'Web', description: 'Añadir sección de planes (incluso si solo hay plan gratuito).', status: 'Pendiente' },
+                { id: 27, category: 'Web', description: 'Añadir contacto funcional o redireccionamiento a WhatsApp.', status: 'Pendiente' },
+                { id: 28, category: 'Pruebas', description: 'Enviar y recibir mensajes reales con flujo automatizado.', status: 'Pendiente' },
+                { id: 29, category: 'Pruebas', description: 'Validar que n8n responde correctamente a intenciones básicas.', status: 'Pendiente' },
+                { id: 30, category: 'Pruebas', description: 'Simular flujo de cliente real.', status: 'Pendiente' },
+            ];
+
+            const categoryColors = {
+                'Infraestructura': 'bg-blue-100 text-blue-800',
+                'Web': 'bg-purple-100 text-purple-800',
+                'Integraciones': 'bg-indigo-100 text-indigo-800',
+                'Planificación': 'bg-green-100 text-green-800',
+                'Técnicos': 'bg-red-100 text-red-800',
+                'Clientes': 'bg-yellow-100 text-yellow-800',
+                'Pruebas': 'bg-pink-100 text-pink-800',
+            };
+
+            let progressChart;
+            let currentFilter = 'Todas';
+            let nextTaskId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1;
+
+            const filtersContainer = document.getElementById('filters');
+            const completedTasksContainer = document.getElementById('completed-tasks');
+            const pendingTasksContainer = document.getElementById('pending-tasks');
+            const progressPercentageEl = document.getElementById('progress-percentage');
+            const chartTextEl = document.getElementById('chart-text');
+
+            const taskDescriptionInput = document.getElementById('task-description-input');
+            const taskCategorySelect = document.getElementById('task-category-select');
+            const addTaskBtn = document.getElementById('add-task-btn');
+
+            function createTaskCard(task) {
+                const color = categoryColors[task.category] || 'bg-gray-100 text-gray-800';
+                const isCompleted = task.status === 'Completado';
+                return `
+                    <div class="task-card bg-white p-4 rounded-lg shadow-md border-l-4 ${isCompleted ? 'border-emerald-500' : 'border-amber-500'}">
+                        <div class="task-header">
+                            <p class="task-description ${isCompleted ? 'completed' : ''} text-slate-800">${task.description}</p>
+                            <div class="task-controls">
+                                <input type="checkbox" class="task-checkbox" data-task-id="${task.id}" ${isCompleted ? 'checked' : ''}>
+                                <button class="delete-btn" data-task-id="${task.id}">🗑️</button>
+                            </div>
+                        </div>
+                        <span class="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full ${color} mt-3">
+                            ${task.category}
+                        </span>
+                    </div>
+                `;
+            }
+
+            function renderTasks() {
+                completedTasksContainer.innerHTML = '';
+                pendingTasksContainer.innerHTML = '';
+
+                const filteredTasks = currentFilter === 'Todas' 
+                    ? tasks 
+                    : tasks.filter(task => task.category === currentFilter);
+
+                if (filteredTasks.length === 0) {
+                     const noTasksMessage = '<div class="text-slate-500 p-4">No hay tareas en esta categoría.</div>';
+                     completedTasksContainer.innerHTML = noTasksMessage;
+                     pendingTasksContainer.innerHTML = noTasksMessage;
+                } else {
+                    let completedCount = 0;
+                    let pendingCount = 0;
+                    filteredTasks.forEach(task => {
+                        const card = createTaskCard(task);
+                        if (task.status === 'Completado') {
+                            completedTasksContainer.innerHTML += card;
+                            completedCount++;
+                        } else {
+                            pendingTasksContainer.innerHTML += card;
+                            pendingCount++;
+                        }
+                    });
+                    if (completedCount === 0) completedTasksContainer.innerHTML = '<div class="text-slate-500 p-4">No hay tareas completadas en esta categoría.</div>';
+                    if (pendingCount === 0) pendingTasksContainer.innerHTML = '<div class="text-slate-500 p-4">No hay tareas pendientes en esta categoría.</div>';
+                }
+
+                addCheckboxListeners();
+                addDeleteButtonListeners(); // Add listener for delete buttons
+                updateChart(filteredTasks);
+                updateActiveButton();
+            }
+
+            function addCheckboxListeners() {
+                document.querySelectorAll('.task-checkbox').forEach(checkbox => {
+                    checkbox.addEventListener('change', (event) => {
+                        const taskId = parseInt(event.target.dataset.taskId);
+                        const taskIndex = tasks.findIndex(task => task.id === taskId);
+                        if (taskIndex !== -1) {
+                            tasks[taskIndex].status = event.target.checked ? 'Completado' : 'Pendiente';
+                            renderTasks(); // Re-render to update lists and chart
+                        }
+                    });
+                });
+            }
+
+            function addDeleteButtonListeners() {
+                document.querySelectorAll('.delete-btn').forEach(button => {
+                    button.addEventListener('click', (event) => {
+                        const taskId = parseInt(event.target.dataset.taskId);
+                        tasks = tasks.filter(task => task.id !== taskId); // Filter out the deleted task
+                        renderTasks(); // Re-render everything
+                    });
+                });
+            }
+
+            function updateChart(filteredTasks) {
+                const completed = filteredTasks.filter(t => t.status === 'Completado').length;
+                const pending = filteredTasks.filter(t => t.status === 'Pendiente').length;
+                const total = filteredTasks.length;
+                const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+                progressPercentageEl.textContent = `${percentage}%`;
+                chartTextEl.querySelector('span:last-child').textContent = `${currentFilter} Completado`;
+
+                const chartData = {
+                    datasets: [{
+                        data: [completed, pending],
+                        backgroundColor: ['#10b981', '#f59e0b'],
+                        borderColor: '#f8fafc',
+                        borderWidth: 4,
+                        hoverOffset: 8,
+                    }]
+                };
+
+                if (progressChart) {
+                    progressChart.data = chartData;
+                    progressChart.update();
+                } else {
+                    const ctx = document.getElementById('progressChart').getContext('2d');
+                    progressChart = new Chart(ctx, {
+                        type: 'doughnut',
+                        data: chartData,
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            cutout: '75%',
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: { enabled: false }
+                            }
+                        }
+                    });
+                }
+            }
+
+            function setupFilters() {
+                const categories = ['Todas', ...Object.keys(categoryColors)];
+                categories.forEach(category => {
+                    const button = document.createElement('button');
+                    button.textContent = category;
+                    button.className = 'filter-btn px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors duration-200';
+                    button.dataset.filter = category;
+                    button.addEventListener('click', () => {
+                        currentFilter = category;
+                        renderTasks();
+                    });
+                    filtersContainer.appendChild(button);
+                });
+            }
+            
+            function updateActiveButton() {
+                document.querySelectorAll('.filter-btn').forEach(btn => {
+                    if (btn.dataset.filter === currentFilter) {
+                        btn.classList.add('active');
+                    } else {
+                        btn.classList.remove('active');
+                    }
+                });
+            }
+
+            // New Task Form Functions
+            function populateCategorySelect() {
+                taskCategorySelect.innerHTML = '';
+                const defaultOption = document.createElement('option');
+                defaultOption.value = '';
+                defaultOption.textContent = 'Seleccionar Categoría';
+                defaultOption.disabled = true;
+                defaultOption.selected = true;
+                taskCategorySelect.appendChild(defaultOption);
+
+                Object.keys(categoryColors).forEach(category => {
+                    const option = document.createElement('option');
+                    option.value = category;
+                    option.textContent = category;
+                    taskCategorySelect.appendChild(option);
+                });
+            }
+
+            function addTask() {
+                const description = taskDescriptionInput.value.trim();
+                const category = taskCategorySelect.value;
+
+                if (!description || !category) {
+                    // In a real app, use a custom modal for user feedback
+                    console.error('Por favor, ingresa una descripción y selecciona una categoría para la tarea.');
+                    return;
+                }
+
+                const newId = nextTaskId++;
+                tasks.push({
+                    id: newId,
+                    category: category,
+                    description: description,
+                    status: 'Pendiente'
+                });
+
+                taskDescriptionInput.value = ''; // Clear input
+                taskCategorySelect.value = ''; // Reset select
+                populateCategorySelect(); // Re-populate to reset default selection
+                renderTasks(); // Re-render tasks
+            }
+
+            addTaskBtn.addEventListener('click', addTask);
+
+            // Initial setup calls
+            setupFilters();
+            populateCategorySelect();
+            renderTasks();
+        });
+    </script>
+</body>
+</html>
